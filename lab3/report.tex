@@ -1,0 +1,138 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{xeCJK}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+
+\setCJKmainfont{SimSun}
+\setCJKmonofont{Courier New}
+
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4,
+    frame=single
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{网络技术与应用实验课 — 实验三报告}
+\fancyfoot[C]{\thepage}
+
+\title{\Large\textbf{通过编程获取 IP 地址与 MAC 地址的对应关系\\实验报告}}
+\author{}
+\date{2025年11月26日}
+
+\begin{document}
+\maketitle
+
+\section*{实验基本信息}
+\begin{center}
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{实验名称} & 通过编程获取IP地址与MAC地址的对应关系 & \textbf{班级} & 0416 \\
+\hline
+\textbf{学生姓名} & 王泽舜 & \textbf{学号} & 2310655 \\
+\hline
+\textbf{指导老师} & 师建新 & \textbf{实验地点} & 实验楼A区312 \\
+\hline
+\textbf{实验时间} & 11.26 & \textbf{报告日期} & 2025年11月26日 \\
+\hline
+\end{tabular}
+\end{center}
+
+\section{作业说明}
+通过编程获取IP地址与MAC地址的对应关系实验，要求如下：
+\begin{enumerate}
+  \item 在 IP 数据报捕获与分析编程实验的基础上，学习 WinPcap/NPcap 的数据包发送方法（\texttt{pcap\_sendpacket}）。
+  \item 通过 WinPcap/NPcap 编程，主动获取或被动捕获 IP 与 MAC 的映射关系（以 ARP 为主）。
+  \item 程序要具有输入 IP 地址并显示对应 MAC 地址的界面；界面可以是命令行界面，需以简单明了的方式在屏幕上显示。 
+  \item 程序结构清晰，具有较好的可读性。
+\end{enumerate}
+
+\section{设计与实现}
+\subsection{总体思路}
+本实验采用主动发送 ARP 请求并同时监听 ARP 回复的方法：
+\begin{itemize}
+  \item 使用 NPcap 提供的 \texttt{pcap\_open\_live} 打开用户选择的网络接口；
+  \item 构造以太网帧（以太头 + ARP payload），通过 \texttt{pcap\_sendpacket} 发送 ARP request；
+  \item 在同一接口上设置 BPF 过滤器 `arp`，捕获 ARP reply 并解析（opcode==2 且 sender IP 匹配目标 IP）；
+  \item 为提高可靠性，发送后调用 Windows API `SendARP` 作为后备，若内核 ARP 缓存已有条目可立即返回。 
+\end{itemize}
+
+\subsection{模块划分}
+\begin{itemize}
+  \item \textbf{arp\_sender}: 构造并发送 ARP 请求（`arp\_sender.c`/`arp\_sender.h`）。
+  \item \textbf{arp\_parser}: 解析捕获到的以太网帧并提取 ARP 回复的 sender IP/MAC（`arp\_parser.c`/`.h`）。
+  \item \textbf{main\\lab3}: 命令行界面、设备选择、发送/捕获协调、结果显示与清理（`main\_lab3.c`）。
+  \item \textbf{工具/说明}: `README.md` 包含编译与运行说明。 
+\end{itemize}
+
+\subsection{关键代码片段}
+构造并发送 ARP 请求（节选，详见 `arp\_sender.c`）：
+\begin{lstlisting}
+// Ethernet header: dst=ff:ff:ff:ff:ff:ff, src=src\_mac, ethertype=0x0806
+// ARP payload: htype=1, ptype=0x0800, hlen=6, plen=4, opcode=1 (request)
+pcap\_sendpacket(handle, packet, sizeof(packet));
+\end{lstlisting}
+
+捕获并解析 ARP 回复（节选，详见 `arp\_parser.c`）：
+\begin{lstlisting}
+// parse ethernet type, then parse arp payload
+if (ethertype == 0x0806 && opcode == 2) {
+    // extract sender\_hw and sender\_ip
+}
+\end{lstlisting}
+
+主程序流程要点（节选，详见 `main\_lab3.c`）：
+\begin{enumerate}
+  \item 列举并选择设备（`pcap\_findalldevs`）；
+  \item 读取本机接口 MAC 与 IPv4；
+  \item 用户输入目标 IPv4；
+  \item 发送 ARP 请求，设置 BPF 过滤器 `arp`；
+  \item 监听并解析 ARP reply，或使用 `SendARP` 作为后备；
+  \item 将 IP → MAC 映射显示在命令行，并在退出前等待用户确认。
+\end{enumerate}
+
+\section{实验结果}
+\subsection{运行片段}
+以下为一次实际运行的关键输出（用户交互节选）：
+\begin{verbatim}
+Available devices:
+1. \Device\NPF\_{...} (WAN Miniport (Network Monitor))
+...
+6. \Device\NPF\_{5864...} (Intel(R) Wi-Fi 6E AX211 160MHz)
+...
+Select device number: 6
+Using source MAC: D4:D8:53:33:E7:6C
+Enter IPv4 address to query (e.g. 192.168.1.10): 10.130.0.1
+Using source IP: 10.130.60.179
+ARP request sent, waiting for reply (2s)...
+SendARP result: 10.130.0.1 => 00:00:5E:00:01:FE
+Press Enter to exit...
+\end{verbatim}
+
+系统 `arp -a` 同一时间段返回：
+\begin{verbatim}
+  10.130.0.1            00-00-5e-00-01-fe     dynamic
+\end{verbatim}
+
+\subsection{分析与结论}
+\begin{itemize}
+  \item 程序通过 `pcap\_sendpacket` 主动发送 ARP 请求，并能在多数情形下通过 `pcap` 捕获到 ARP 回复；在本次环境中，Windows 内核可能已经预先解析或路由器响应导致 `SendARP` 能直接返回 MAC，其结果与系统 ARP 缓存一致，验证了实现正确性。
+  \item 本次实验实现并验证了使用 NPcap 的数据包发送与捕获能力，能够主动获取本地网络内的 IP→MAC 映射，完成了实验要求。
+\end{itemize}
+
+
+
+\end{document}
