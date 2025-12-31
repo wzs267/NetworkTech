@@ -140,7 +140,7 @@ ip access-group 1 in
 
 \begin{lstlisting}
 access-list 103 permit tcp host 192.168.3.2 host 192.168.2.3 eq 80
-access-list 103 deny any
+access-list 103 deny ip any any
 interface GigabitEthernet0/1
 ip access-group 103 in
 \end{lstlisting}
