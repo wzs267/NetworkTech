@@ -1,0 +1,121 @@
+% !TeX program = xelatex
+\documentclass[a4paper,12pt]{article}
+\usepackage{xeCJK}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+\setCJKmainfont{SimSun}
+\setmainfont{Times New Roman}
+\title{PPPoE 服务器的配置和应用}
+\author{王泽舜 \quad 学号：2310655}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{实验目的}
+- 掌握 PPPoE 服务器的基本配置方法（认证协议、地址池、虚拟模板与物理接口）。
+\section*{实验要求}
+- PPPoE 服务器配置和应用实验在虚拟仿真环境下完成，要求如下：
+	1. 仿真有线局域网接入互联网的场景，正确配置 PPPoE 服务器的认证协议、地址池、虚拟模板和物理接口，使内网用户经认证后才能正常访问外部互联网。
+	2. 仿真家庭网络中，无线和有线终端（主机、智能电话等）连入小型路由器，由小型路由器统一接入互联网服务运营商 PPPoE 服务器的场景。对小型路由器和 PPPoE 服务器进行设置，使家庭网络中的用户经认证后才能正常访问外部互联网。
+
+\section*{实验拓扑与环境}
+实验拓扑如图所示，采用三台设备模拟：`server3`（AAA/RADIUS 服务器）、`router2`（ISP / PPPoE 服务端）和连接到外网的路由器（模拟外网，192.168.3.0 网段）。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{pictures/网络拓扑.png}
+\caption{实验网络拓扑}
+\end{figure}
+
+\section*{设备与 IP 规划}
+- AAA 服务器（`server3`）：192.168.2.3（作为 RADIUS 认证、账号数据库）。
+- ISP 路由器（`router2`）：对外接口连接外网，内侧用于 PPPoE 服务，地址池用于分配给 PPPoE 客户端。
+- 内网段（示例）：192.168.1.0/24，地址池范围 `192.168.1.100`–`192.168.1.200`。
+
+\section*{配置要点与步骤}
+以下按 `router2`（ISP）与 `server3`（AAA）两端配置说明：
+
+\subsection*{1) AAA/RADIUS（server3）}
+在 `server3` 上配置用户账号与 RADIUS 服务，供 PPPoE 验证使用。相关截图见图\ref{fig:aaaconf}。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{pictures/AAAServer网络和账号配置.png}
+\caption{AAA 服务器网络与账号配置示意}\label{fig:aaaconf}
+\end{figure}
+
+\subsection*{2) ISP 路由器（router2）配置指令}
+在 `router2` 上启用 `aaa new-model`，配置 RADIUS 服务器、地址池、虚拟模板并将物理接口启用 PPPoE：
+
+\begin{lstlisting}
+aaa new-model
+aaa authentication ppp myPPPoE group radius
+radius-server host 192.168.2.3 auth-port 1645 key radius123
+ip local pool myPool 192.168.1.100 192.168.1.200
+interface virtual-template 1
+ ip unnumber gig0/1
+ peer default ip address pool myPool
+ ppp authentication chap myPPPoE
+exit
+bba-group pppoe myBBAGroup
+ virtual-template 1
+exit
+interface gig0/1
+ pppoe enable group myBBAGroup
+exit
+\end{lstlisting}
+
+说明：
+- `radius-server host` 指向 `server3` 的地址与共享密钥（示例为 `radius123`）。
+- `ip local pool myPool` 定义给拨号客户端分配的地址段。
+- `virtual-template` 用作 PPPoE 会话模板，包含认证方式与地址分配策略；通过 `bba-group` 将模板绑定到物理接口的 PPPoE 功能上。
+
+\section*{测试方法与结果}
+测试流程：
+1. 在内网主机端发起 PPPoE 拨号（作为 PPPoE 客户端）。
+2. 路由器 `router2` 接收拨号请求并将认证请求转发到 `server3`（RADIUS）。
+3. AAA 验证通过后，`router2` 从 `myPool` 分配 IP，建立隧道并允许访问外部网络。
+
+测试结果总结：
+- 客户端成功通过 CHAP（或 PAP/CHAP 任选）方式被 `server3` 验证。
+- 客户端获得来自地址池 `192.168.1.100`–`192.168.1.200` 的 IP 地址，并可访问模拟外网（192.168.3.0/24）。
+- 认证失败的客户端无法获得地址或访问外部网络，满足基于认证的接入控制要求。
+
+（实验中相关截图证明了 AAA 配置与拨号成功，已插入上文图片。）
+实验中获取的关键测试截图如下，分别展示拨号成功、地址分配以及内网访问外网与外网对内网的连通性验证。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.48\textwidth]{pictures/PPPoE连接成功.png}
+\includegraphics[width=0.48\textwidth]{pictures/为内网主机分配ip.png}
+\caption{PPPoE 拨号成功与为内网主机分配 IP}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.48\textwidth]{pictures/内网访问外网web.png}
+\includegraphics[width=0.48\textwidth]{pictures/外网ping内网.png}
+\caption{内网访问外网的 Web 测试与外网对内网的 Ping 验证}
+\end{figure}
+
+\section*{问题与注意事项}
+- RADIUS 服务器和路由器之间的时间同步与共享密钥必须一致，否则认证会失败。
+- 地址池大小应根据并发拨号的最大数量合理设置，避免地址耗尽。
+- 在真实生产环境中需注意安全（如使用更安全的 AAA 协议、限制管理访问等）。
+
+\section*{结论}
+通过本次实验，可以掌握 PPPoE 服务端的典型配置流程：启用 AAA 模型、配置 RADIUS 服务器、定义地址池与虚拟模板，并在物理接口上启用 PPPoE。实验验证了经认证的用户可获得地址并访问外网，未认证用户被阻断，符合预期实验要求。
+
+\section*{编译说明}
+建议使用 XeLaTeX 编译：
+\begin{verbatim}
+xelatex lab8_report.tex
+\end{verbatim}
+
+\end{document}
