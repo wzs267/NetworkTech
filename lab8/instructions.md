@@ -24,4 +24,3 @@ exit
 interface gig0/1
 pppoe enable group myBBAGroup
 exit
-测试结果见picture中的其他图片，你应该把测试结果的图片都放到报告里
